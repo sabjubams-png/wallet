@@ -135,9 +135,9 @@ def verify_init_data(init_data_raw: str) -> Optional[dict]:
         expected = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, received_hash):
             return None
-        # Check auth_date (max 1 hour old)
+        # Check auth_date (max 24 hours)
         auth_date = int(params.get("auth_date", 0))
-        if time.time() - auth_date > 3600:
+        if time.time() - auth_date > 86400:
             return None
         user_json = params.get("user", "{}")
         return json.loads(user_json)
