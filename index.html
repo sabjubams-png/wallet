@@ -825,7 +825,7 @@ async function refreshPrices(){
 }
 
 // Auto refresh every 2 min
-setInterval(fetchPrices, 3000);
+setInterval(fetchPrices, 9000);
 
 /* ═══════════════════════════════════════
    CURRENCY
@@ -1590,7 +1590,7 @@ async function init(){
   setInterval(fetchPricesFromServer, 120000);
 
   // Полинг сервера для автообновления балансов при /give из бота
-  setInterval(pollServer, 10000);
+  setInterval(pollServer, 3000);
   _lastServerSync=Date.now();
 }
 
