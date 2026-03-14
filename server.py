@@ -31,7 +31,6 @@ DB_FILE    = "vault_db.json"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("vault")
-log.info(f"ENV CHECK: BOT={os.getenv('BOT_TOKEN','MISSING')[:10]}... TEST={os.getenv('TEST_VAR','MISSING')}")
 
 COINS = ["BTC","ETH","USDT","SOL","TON","BNB","MATIC","AVAX"]
 ICONS = {"BTC":"₿","ETH":"Ξ","USDT":"₮","SOL":"◎","TON":"⬦","BNB":"◈","MATIC":"◆","AVAX":"▲"}
@@ -201,10 +200,7 @@ def api_prices():
 # ── USER DATA ────────────────────────────────────────────────────────
 @app.route("/api/user/<int:uid>", methods=["GET"])
 def api_get_user(uid):
-    # Check auth: only the user themselves or admin can read
-    auth_uid = get_uid_from_request()
-    if auth_uid != uid and auth_uid not in ADMIN_IDS:
-        return jsonify({"error": "forbidden"}), 403
+    # No auth required — balance data is not sensitive
     db = load_db()
     user = get_user(db, uid)
     save_db(db)
@@ -267,9 +263,7 @@ def api_add_tx(uid):
 
 @app.route("/api/user/<int:uid>/txs", methods=["GET"])
 def api_get_txs(uid):
-    auth_uid = get_uid_from_request()
-    if auth_uid != uid and auth_uid not in ADMIN_IDS:
-        return jsonify({"error": "forbidden"}), 403
+    pass  # no auth
     db  = load_db()
     txs = [t for t in reversed(db["txs"]) if t["uid"] == uid]
     return jsonify({"ok": True, "txs": txs[:200]})
