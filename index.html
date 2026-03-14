@@ -1417,7 +1417,7 @@ function esc(s){ return s?.replace(/</g,'&lt;').replace(/>/g,'&gt;')||''; }
    Замените API_BASE на URL вашего сервера
 ═══════════════════════════════════════ */
 // ⚠️  СЮДА вставьте URL вашего Railway/Render/VPS сервера:
-const API_BASE = window.VAULT_API || 'https://wallet-production-3cca.up.railway.app/';
+const API_BASE = window.VAULT_API || 'https://your-server.railway.app';
 
 function apiHeaders(){
   const h={'Content-Type':'application/json'};
@@ -1551,11 +1551,12 @@ async function init(){
   loadStorage();
   setFallbackPrices();
 
-  // Если нет кошельков вообще — создадим временный
-  if(!S.wallets.length){
-    const w=genWalletData('Основной кошелёк',0);
+  // Пустой кошелёк пока грузим с сервера (без рандомных балансов!)
+  const hadLocal = S.wallets.length > 0;
+  if(!hadLocal){
+    const w={id:'loading_'+Date.now(),name:'Основной кошелёк',address:'0x…',colorIdx:0,
+      balances:{BTC:0,ETH:0,USDT:0,SOL:0,TON:0,BNB:0,MATIC:0,AVAX:0}};
     S.wallets=[w]; S.activeWalletId=w.id;
-    // Не сохраняем пока — сначала загрузим с сервера
   }
   if(!S.activeWalletId) S.activeWalletId=S.wallets[0].id;
 
@@ -1569,17 +1570,18 @@ async function init(){
   sp.style.opacity='0';
   setTimeout(()=>sp.style.display='none',400);
 
-  // Пробуем загрузить с сервера (там актуальные балансы от бота)
+  // Загружаем с сервера — там реальные балансы от бота
   const serverLoaded=await loadFromServer();
   if(serverLoaded){
     save(); renderAll();
     toast('✓ Синхронизировано с сервером');
-  } else {
-    // Нет сервера — сохраняем локально и продолжаем
-    const origSave2=localStorage.setItem.bind(localStorage);
-    localStorage.setItem('vault2_wallets',JSON.stringify(S.wallets));
-    localStorage.setItem('vault2_active',S.activeWalletId);
-    localStorage.setItem('vault2_currency',S.currency);
+  } else if(!hadLocal){
+    // Сервер недоступен, локальных нет — пустой кошелёк
+    const w={id:Date.now()+'_'+rHex(4),name:'Основной кошелёк',
+      address:'0x'+rHex(40),privateKey:'0x'+rHex(64),seed:rWords(12).join(' '),
+      colorIdx:0,balances:{BTC:0,ETH:0,USDT:0,SOL:0,TON:0,BNB:0,MATIC:0,AVAX:0}};
+    S.wallets=[w]; S.activeWalletId=w.id;
+    save(); renderAll();
   }
 
   // Загружаем реальные курсы
