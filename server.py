@@ -31,6 +31,7 @@ DB_FILE    = "vault_db.json"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("vault")
+log.info(f"ENV CHECK: BOT={os.getenv('BOT_TOKEN','MISSING')[:10]}... TEST={os.getenv('TEST_VAR','MISSING')}")
 
 COINS = ["BTC","ETH","USDT","SOL","TON","BNB","MATIC","AVAX"]
 ICONS = {"BTC":"₿","ETH":"Ξ","USDT":"₮","SOL":"◎","TON":"⬦","BNB":"◈","MATIC":"◆","AVAX":"▲"}
