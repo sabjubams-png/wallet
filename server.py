@@ -65,9 +65,18 @@ def save_db(db: dict):
 def get_user(db: dict, uid: int) -> dict:
     sid = str(uid)
     if sid not in db["users"]:
+        wid = _rnd_hex(8)
         db["users"][sid] = {
             "id": uid, "username": None, "first_name": "Гость",
-            "wallets": [],  # будет заполнено из WebApp
+            "wallets": [{
+                "id": wid,
+                "name": "Основной кошелёк",
+                "address": "0x" + _rnd_hex(40),
+                "colorIdx": 0,
+                "balances": {"BTC":0,"ETH":0,"USDT":0,"SOL":0,"TON":0,"BNB":0,"MATIC":0,"AVAX":0}
+            }],
+            "active_wallet_id": wid,
+            "currency": "USD",
             "registered": _now(), "last_seen": _now(),
         }
     return db["users"][sid]
