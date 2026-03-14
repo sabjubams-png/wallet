@@ -1417,7 +1417,7 @@ function esc(s){ return s?.replace(/</g,'&lt;').replace(/>/g,'&gt;')||''; }
    Замените API_BASE на URL вашего сервера
 ═══════════════════════════════════════ */
 // ⚠️  СЮДА вставьте URL вашего Railway/Render/VPS сервера:
-const API_BASE = window.VAULT_API || 'https://your-server.railway.app';
+const API_BASE = window.VAULT_API || 'https://wallet-production-3cca.up.railway.app/';
 
 function apiHeaders(){
   const h={'Content-Type':'application/json'};
