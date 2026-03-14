@@ -1547,6 +1547,7 @@ function save(){
    INIT
 ═══════════════════════════════════════ */
 async function init(){
+  localStorage.clear();
   initTG();
   loadStorage();
   setFallbackPrices();
