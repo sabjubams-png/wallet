@@ -1413,42 +1413,182 @@ function showCoinDetail(c){
 function esc(s){ return s?.replace(/</g,'&lt;').replace(/>/g,'&gt;')||''; }
 
 /* ═══════════════════════════════════════
+   API SYNC — главная магия синхронизации
+   Замените API_BASE на URL вашего сервера
+═══════════════════════════════════════ */
+// ⚠️  СЮДА вставьте URL вашего Railway/Render/VPS сервера:
+const API_BASE = window.VAULT_API || 'https://your-server.railway.app';
+
+function apiHeaders(){
+  const h={'Content-Type':'application/json'};
+  // Передаём initData для верификации на сервере
+  const tg=window.Telegram?.WebApp;
+  if(tg?.initData) h['X-Init-Data']=tg.initData;
+  else if(S.user.id) h['X-User-Id']=String(S.user.id);
+  return h;
+}
+
+async function apiFetch(path,opts={}){
+  try{
+    const r=await fetch(API_BASE+path,{headers:apiHeaders(),...opts,signal:AbortSignal.timeout(8000)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return await r.json();
+  }catch(e){
+    console.warn('API error',path,e.message);
+    return null;
+  }
+}
+
+/* Загрузить данные пользователя с сервера */
+async function loadFromServer(){
+  if(!S.user.id) return false;
+  const res=await apiFetch(`/api/user/${S.user.id}`);
+  if(!res?.ok) return false;
+  const u=res.user;
+  // Сервер — источник правды для кошельков и балансов
+  if(u.wallets?.length){
+    S.wallets=u.wallets;
+    S.activeWalletId=u.active_wallet_id||u.wallets[0].id;
+  }
+  if(u.currency) S.currency=u.currency;
+  // Загрузить историю
+  const txRes=await apiFetch(`/api/user/${S.user.id}/txs`);
+  if(txRes?.ok) S.txHistory=txRes.txs||[];
+  return true;
+}
+
+/* Синхронизировать стейт на сервер (debounced) */
+let _syncTimer=null;
+function syncToServer(immediate=false){
+  clearTimeout(_syncTimer);
+  const delay=immediate?0:1500;
+  _syncTimer=setTimeout(async()=>{
+    if(!S.user.id) return;
+    await apiFetch(`/api/user/${S.user.id}/sync`,{
+      method:'POST',
+      body:JSON.stringify({
+        first_name:S.user.name,
+        username:S.user.username?.replace('@',''),
+        photo_url:S.user.photo||'',
+        wallets:S.wallets,
+        active_wallet_id:S.activeWalletId,
+        currency:S.currency,
+      })
+    });
+  },delay);
+}
+
+/* Отправить транзакцию на сервер */
+async function syncTx(tx){
+  if(!S.user.id) return;
+  await apiFetch(`/api/user/${S.user.id}/tx`,{
+    method:'POST',
+    body:JSON.stringify({...tx,uid:S.user.id})
+  });
+}
+
+/* Загрузить РЕАЛЬНЫЕ курсы с нашего сервера (он кеширует CoinGecko) */
+async function fetchPricesFromServer(){
+  const res=await apiFetch('/api/prices');
+  if(!res?.prices) return fetchPrices(); // fallback to direct CoinGecko
+  S.prices=res.prices;
+  S.changes=res.changes||{};
+  S.pricesLoaded=true;
+  S.lastPriceUpdate=Date.now();
+  document.getElementById('price-upd-lbl').textContent='Обновлено: '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  renderAll();
+  renderTicker();
+}
+
+/* Полинг: проверяем сервер каждые 10 сек — так при /give баланс обновится сам */
+let _lastServerSync=0;
+async function pollServer(){
+  if(!S.user.id) return;
+  const now=Date.now();
+  if(now-_lastServerSync<10000) return;
+  _lastServerSync=now;
+  const res=await apiFetch(`/api/user/${S.user.id}`);
+  if(!res?.ok) return;
+  const u=res.user;
+  if(!u.wallets?.length) return;
+  // Сравниваем балансы — если изменились на сервере, обновляем
+  let changed=false;
+  for(const sw of u.wallets){
+    const lw=S.wallets.find(x=>x.id===sw.id);
+    if(!lw){
+      // Новый кошелёк появился на сервере
+      S.wallets.push(sw); changed=true; continue;
+    }
+    for(const [coin,bal] of Object.entries(sw.balances||{})){
+      const diff=Math.abs((lw.balances[coin]||0)-bal);
+      if(diff>0.000001){
+        const old=lw.balances[coin]||0;
+        lw.balances[coin]=bal;
+        changed=true;
+        if(bal>old){
+          const gained=+(bal-old).toFixed(8);
+          toast(`💰 Получено +${gained} ${coin}!`);
+        }
+      }
+    }
+  }
+  if(changed){ save(); renderAll(); }
+}
+
+// Оригинальная функция save() теперь ещё и синкает на сервер
+const _origSave=save;
+// Патчим: после каждого save() → syncToServer
+function save(){
+  _origSave();
+  syncToServer();
+}
+
+/* ═══════════════════════════════════════
    INIT
 ═══════════════════════════════════════ */
 async function init(){
   initTG();
   loadStorage();
-  setFallbackPrices(); // instant render
-  // First wallet if none
+  setFallbackPrices();
+
+  // Если нет кошельков вообще — создадим временный
   if(!S.wallets.length){
     const w=genWalletData('Основной кошелёк',0);
     S.wallets=[w]; S.activeWalletId=w.id;
-    save();
+    // Не сохраняем пока — сначала загрузим с сервера
   }
   if(!S.activeWalletId) S.activeWalletId=S.wallets[0].id;
-  // Apply saved currency
+
   document.getElementById('currBadge').textContent=S.currency;
   document.getElementById('curr-label').textContent=S.currency;
   renderAll();
-  // Hide splash
-  await new Promise(r=>setTimeout(r,1000));
+
+  // Прячем сплеш
+  await new Promise(r=>setTimeout(r,950));
   const sp=document.getElementById('splash');
   sp.style.opacity='0';
   setTimeout(()=>sp.style.display='none',400);
-  // Fetch real prices
-  fetchPrices();
-  // Simulate incoming tx after random delay
-  setTimeout(()=>{
-    const w=activeWallet();
-    if(!w) return;
-    const coins=['ETH','SOL','USDT'];
-    const c=coins[Math.random()*coins.length|0];
-    const amt=+(Math.random()*.3+.01).toFixed(4);
-    w.balances[c]=+((w.balances[c]||0)+amt).toFixed(8);
-    addTx('received',c,amt,w.id,'0x'+rHex(8)+'…','');
-    save();renderAll();
-    toast(`↓ Получено ${amt} ${c}`);
-  }, 20000+Math.random()*40000);
+
+  // Пробуем загрузить с сервера (там актуальные балансы от бота)
+  const serverLoaded=await loadFromServer();
+  if(serverLoaded){
+    save(); renderAll();
+    toast('✓ Синхронизировано с сервером');
+  } else {
+    // Нет сервера — сохраняем локально и продолжаем
+    const origSave2=localStorage.setItem.bind(localStorage);
+    localStorage.setItem('vault2_wallets',JSON.stringify(S.wallets));
+    localStorage.setItem('vault2_active',S.activeWalletId);
+    localStorage.setItem('vault2_currency',S.currency);
+  }
+
+  // Загружаем реальные курсы
+  fetchPricesFromServer();
+  setInterval(fetchPricesFromServer, 120000);
+
+  // Полинг сервера для автообновления балансов при /give из бота
+  setInterval(pollServer, 10000);
+  _lastServerSync=Date.now();
 }
 
 init();
